@@ -7,9 +7,9 @@ import paho.mqtt.client as mqtt
 from typing import List, Optional
 
 # ================== 可配置常量 ==================
-MQTT_TOPIC_CMD = "/Amway/B2/B2_560/roboticArm"
-MQTT_TOPIC_STATUS = "/Amway/B2/B2_560/statusArm"
-DEFAULT_BROKER_HOST = "10.142.94.37"
+MQTT_TOPIC_CMD = "/Org/B2/B2_560/roboticArm"
+MQTT_TOPIC_STATUS = "/Org/B2/B2_560/statusArm"
+DEFAULT_BROKER_HOST = "127.0.0.1"
 DEFAULT_BROKER_PORT = 31883
 
 # 位置文件映射（可继续扩展）

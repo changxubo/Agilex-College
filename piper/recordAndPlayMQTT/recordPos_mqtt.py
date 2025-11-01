@@ -7,9 +7,9 @@ import paho.mqtt.client as mqtt
 from typing import Optional
 
 # ================== 常量配置 ==================
-MQTT_TOPIC_CMD = "/Amway/B2/B2_560/roboticArm"
-MQTT_TOPIC_STATUS = "/Amway/B2/B2_560/statusArm"
-BROKER_HOST = "10.142.94.37"
+MQTT_TOPIC_CMD = "/Org/B2/B2_560/roboticArm"
+MQTT_TOPIC_STATUS = "/Org/B2/B2_560/statusArm"
+BROKER_HOST = "127.0.0.1"
 BROKER_PORT = 31883
 
 TEACH_MODE_TIMEOUT = 10.0            # 示教模式进入超时
