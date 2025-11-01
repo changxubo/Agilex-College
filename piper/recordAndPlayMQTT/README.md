@@ -12,6 +12,7 @@ EOF
 
 ## 安装服务
 ```bash
+sudo chmod +x /home/unitree/Agilex-College/piper/recordAndPlayMQTT/auto_start.sh
 sudo cp /home/unitree/Agilex-College/piper/recordAndPlayMQTT/piper.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable piper.service
