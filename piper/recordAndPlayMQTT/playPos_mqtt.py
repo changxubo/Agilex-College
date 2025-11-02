@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 # -*-coding:utf8-*-
-# 播放点位
+# Playback waypoints
 import os, time, csv, json
 from piper_sdk import *
 import paho.mqtt.client as mqtt
 from typing import List, Optional
 
-# ================== 可配置常量 ==================
+# ================== Configurable Constants ==================
 MQTT_TOPIC_CMD = "/Org/B2/B2_560/roboticArm"
 MQTT_TOPIC_STATUS = "/Org/B2/B2_560/statusArm"
 DEFAULT_BROKER_HOST = "127.0.0.1"
 DEFAULT_BROKER_PORT = 31883
 
-# 位置文件映射（可继续扩展）
+# Mapping of position files (extensible)
 POSITION_FILES = {
     "default": "pos.csv",
     "welcome": "welcome_pos.csv",
@@ -20,25 +20,25 @@ POSITION_FILES = {
     "left": "left_pos.csv",
 }
 
-# 运动到目标点的最大等待时间（秒）
+# Maximum wait time (seconds) for each waypoint to be reached
 WAYPOINT_TIMEOUT = 8.0
-WAYPOINT_JOINT_TOL = 0.0698  # 约 4°
+WAYPOINT_JOINT_TOL = 0.0698  # Approx 4 degrees
 
-# 主循环休眠
+# Sleep interval in main loop
 MAIN_LOOP_SLEEP = 0.1
 
-# ================== 全局状态（尽量集中管理） ==================
-init_flag = False          # 收到初始化指令
-enter_flag = False         # 收到进入播放指令
-exit_flag = False          # 收到退出指令
-play_ready = False         # 机械臂准备好播放
-current_pos_name = "default"  # 当前选择的点位集名称
+# ================== Global State (centralized) ==================
+init_flag = False          # received initialization command
+enter_flag = False         # received playback start command
+exit_flag = False          # received exit command
+play_ready = False         # arm is ready for playback
+current_pos_name = "default"  # current selected position set name
 mqtt_client = None
-track: List[List[float]] = []   # 当前点位序列
+track: List[List[float]] = []   # current waypoint sequence
 
 
 def reset_session_state():
-    """重置一次播放会话内的动态标志（不含当前点位名）。"""
+    """Reset dynamic flags of a single playback session (excluding current position set name)."""
     global init_flag, enter_flag, exit_flag, play_ready
     init_flag = False
     enter_flag = False
@@ -46,52 +46,52 @@ def reset_session_state():
     play_ready = False
 
 def load_track_file(file_name: str) -> Optional[List[List[float]]]:
-    """加载点位文件并返回二维浮点数组；失败返回 None。"""
+    """Load waypoint file and return 2D list of floats; return None if failed."""
     abs_path = os.path.join(os.path.dirname(__file__), file_name)
     try:
         with open(abs_path, 'r', encoding='utf-8') as f:
             rows = list(csv.reader(f))
         if not rows:
-            print(f"ERROR: 点位文件为空: {file_name}")
+            print(f"ERROR: Waypoint file empty: {file_name}")
             return None
         return [[float(c) for c in r] for r in rows]
     except FileNotFoundError:
-        print(f"ERROR: 点位文件不存在: {file_name}")
+        print(f"ERROR: Waypoint file not found: {file_name}")
         return None
     except Exception as e:
-        print(f"ERROR: 读取点位文件失败({file_name}): {e}")
+        print(f"ERROR: Failed to read waypoint file ({file_name}): {e}")
         return None
 
 
 def set_pos(pos_name: str):
-    """设置当前使用的点位序列。"""
+    """Set current waypoint sequence by position set name."""
     global track, current_pos_name
     file_name = POSITION_FILES.get(pos_name)
     if not file_name:
-        publish_status("error", f"未知的点位集: {pos_name}", "setpos")
+        publish_status("error", f"Unknown position set: {pos_name}", "setpos")
         return False
     loaded = load_track_file(file_name)
     if loaded is None:
-        publish_status("error", f"点位文件加载失败: {file_name}", "setpos")
+        publish_status("error", f"Failed to load waypoint file: {file_name}", "setpos")
         return False
     track = loaded
     current_pos_name = pos_name
-    publish_status("success", f"点位[{pos_name}]加载成功, 共{len(track)}条", f"setpos_{pos_name}")
+    publish_status("success", f"Waypoint set [{pos_name}] loaded, total {len(track)} entries", f"setpos_{pos_name}")
     return True
 
 def on_connect(client, userdata, flags, rc):
-    """MQTT连接回调函数"""
+    """MQTT connection callback."""
     if rc == 0:
-        print("INFO: MQTT连接成功")
+        print("INFO: MQTT connected successfully")
         client.subscribe(MQTT_TOPIC_CMD)
-        print(f"INFO: 已订阅topic: {MQTT_TOPIC_CMD}")
-        publish_status("success", "MQTT连接成功并已订阅命令", "mqtt_connect")
+        print(f"INFO: Subscribed topic: {MQTT_TOPIC_CMD}")
+        publish_status("success", "MQTT connected and subscribed command topic", "mqtt_connect")
     else:
-        print(f"ERROR: MQTT连接失败，错误代码: {rc}")
-        publish_status("error", f"MQTT连接失败 rc={rc}", "mqtt_connect")
+        print(f"ERROR: MQTT connection failed, code: {rc}")
+        publish_status("error", f"MQTT connection failed rc={rc}", "mqtt_connect")
 
 def publish_status(status, message, cmd=""):
-    """发布命令执行状态到MQTT"""
+    """Publish execution status to MQTT."""
     try:
         data = {
             "cmd": cmd,
@@ -105,79 +105,79 @@ def publish_status(status, message, cmd=""):
             mqtt_client.publish(MQTT_TOPIC_STATUS, json.dumps(data), qos=0, retain=False)
         print(f"STATUS: {data}")
     except Exception as e:
-        print(f"ERROR: 发布状态消息失败: {e}")
+        print(f"ERROR: Failed to publish status message: {e}")
 
 def on_message(client, userdata, msg):
-    """MQTT消息回调函数"""
+    """MQTT message callback."""
     global init_flag, enter_flag, exit_flag
     try:
         message = json.loads(msg.payload.decode())
         cmd = message.get('cmd', '')
-        print(f"INFO: 收到MQTT消息: {message}")
+        print(f"INFO: Received MQTT message: {message}")
 
         if cmd == 'replay_init':
             init_flag = True
-            publish_status("success", "收到初始化命令", cmd)
+            publish_status("success", "Initialization command received", cmd)
         elif cmd.startswith('setpos_'):
             # setpos_welcome / setpos_right / setpos_left / setpos_default
             pos_name = cmd.replace('setpos_', '', 1)
             if set_pos(pos_name):
-                # 成功加载点位后，如果已经 init 过，可立即进入 ready 状态再播放
-                publish_status("success", f"点位集[{pos_name}]已准备", cmd)
+                # After successful load, if already init, can enter ready state
+                publish_status("success", f"Waypoint set [{pos_name}] ready", cmd)
             else:
-                publish_status("error", f"点位集[{pos_name}]加载失败", cmd)
+                publish_status("error", f"Waypoint set [{pos_name}] load failed", cmd)
         elif cmd == 'replay_enter':
             if play_ready:
                 enter_flag = True
-                publish_status("success", "开始执行播放序列", cmd)
+                publish_status("success", "Start executing playback sequence", cmd)
             else:
-                publish_status("error", "未准备好（尚未初始化）", cmd)
+                publish_status("error", "Not ready (not initialized)", cmd)
         elif cmd == 'replay_q':
             exit_flag = True
-            publish_status("success", "收到退出命令，准备回到初始状态", cmd)
+            publish_status("success", "Exit command received, returning to initial state", cmd)
         else:
-            publish_status("error", f"未知命令: {cmd}", cmd)
+            publish_status("error", f"Unknown command: {cmd}", cmd)
     except json.JSONDecodeError:
-        publish_status("error", "JSON解析失败", "json_parse")
+        publish_status("error", "JSON parse failed", "json_parse")
     except Exception as e:
-        publish_status("error", f"处理消息异常: {e}", "exception")
+        publish_status("error", f"Exception handling message: {e}", "exception")
 
 if __name__ == "__main__":
-    # 是否有夹爪
+    # Whether a gripper exists
     have_gripper = True
-    # 播放次数，0表示无限循环
+    # Playback times; 0 means infinite loop
     play_times = 1
-    # 播放间隔，单位：秒，负数表示人工按键控制
+    # Playback interval in seconds; negative means manual key control
     play_interval = 0
-    # 运动速度百分比，建议范围：10-100
+    # Motion speed percentage; suggested range: 10-100
     move_spd_rate_ctrl = 100
-    # 切换CAN模式超时时间，单位：秒
+    # Timeout for switching to CAN control mode in seconds
     timeout = 5.0
     
-    # 设置默认点位（如果失败仍继续，可稍后再设置）
+    # Load default positions (continue even if failed; can set later)
     set_pos("default")
 
-    # 设置MQTT客户端
+    # Setup MQTT client
     mqtt_client = mqtt.Client()
     mqtt_client.on_connect = on_connect
     mqtt_client.on_message = on_message
     
-    # 连接MQTT服务器
+    # Connect to MQTT broker
     try:
         mqtt_client.connect(DEFAULT_BROKER_HOST, DEFAULT_BROKER_PORT, 60)
-        mqtt_client.loop_start()  # 开始MQTT循环
-        print("INFO: 正在连接MQTT服务器...")
+        mqtt_client.loop_start()  # Start MQTT loop
+        print("INFO: Connecting to MQTT broker...")
     except Exception as e:
-        print(f"ERROR: 无法连接MQTT服务器: {e}")
+        print(f"ERROR: Failed to connect MQTT broker: {e}")
         exit()
 
-    # 初始化并连接机械臂
+    # Initialize and connect robotic arm
     piper = C_PiperInterface_V2("can0")
     piper.ConnectPort()
     time.sleep(0.1)
 
     def get_pos():
-        '''获取机械臂当前关节弧度和夹爪张开距离'''
+        '''Get current joint radians and gripper opening distance.'''
         joint_state = piper.GetArmJointMsgs().joint_state
         joint_state = tuple(getattr(joint_state, f"joint_{i+1}") / 1e3 * 0.0174533 for i in range(6))
         if have_gripper:
@@ -185,77 +185,77 @@ if __name__ == "__main__":
         return joint_state
     
     def stop():
-        '''停止机械臂；初次退出示教模式需先调用此函数才能使用CAN模式控制机械臂'''
+        '''Stop the arm; first exit from teaching mode must call this before CAN control works.'''
         piper.EmergencyStop(0x01)
         time.sleep(1.0)
-        limit_angle = [0.1745, 0.7854, 0.2094]  # 2、3、5关节弧度在限制范围内时才恢复机械臂，防止大弧度直接掉落造成损坏
+        limit_angle = [0.1745, 0.7854, 0.2094]  # Only restore when joints 2,3,5 within safe range to avoid dropping damage
         pos = get_pos()
-        while not (abs(pos[1]) < limit_angle[0] and abs(pos[2]) < limit_angle[0] and pos[4] < limit_angle[1] and pos[4] > limit_angle[2]):
+        while not (abs(pos[1]) < limit_angle[0] and abs(pos[2]) < limit_angle[0] and limit_angle[2] < pos[4] < limit_angle[1]):
             time.sleep(0.01)
             pos = get_pos()
-        # 恢复机械臂
+        # Restore the arm
         piper.EmergencyStop(0x02)
         time.sleep(1.0)
     
     def enable():
-        '''使能机械臂和夹爪'''
+        '''Enable the arm and gripper.'''
         while not piper.EnablePiper():
             time.sleep(0.01)
         if have_gripper:
             time.sleep(0.01)
             piper.GripperCtrl(0, 1000, 0x01, 0x00)
         piper.ModeCtrl(0x01, 0x01, move_spd_rate_ctrl, 0x00)
-        print("INFO: 使能成功")
+        print("INFO: Enable successful")
     
     def init_play():
-        '''初始化机械臂进入播放模式'''
+        '''Initialize the arm into replay (playback) mode.'''
         global play_ready
-        print("INFO: 正在初始化机械臂进入replay模式...")
-        print("INFO: 播放前请确保机械臂已退出示教模式")
-        
+        print("INFO: Initializing arm into replay mode...")
+        print("INFO: Ensure the arm has exited teaching mode before playback")
+
         if piper.GetArmStatus().arm_status.ctrl_mode != 1:
-            stop()  # 初次退出示教模式需先调用此函数才能切换至CAN模式
+            stop()  # First exit from teaching mode requires calling this before switching to CAN mode
         over_time = time.time() + timeout
         while piper.GetArmStatus().arm_status.ctrl_mode != 1:
             if over_time < time.time():
-                print("ERROR: CAN模式切换失败，请检查是否退出示教模式")
-                publish_status("error", "CAN模式切换失败，请检查是否退出示教模式", "replay_init")
+                print("ERROR: CAN mode switch failed; check if teaching mode exited")
+                publish_status("error", "CAN mode switch failed; check teaching mode exit", "replay_init")
                 return False
             piper.ModeCtrl(0x01, 0x01, move_spd_rate_ctrl, 0x00)
             time.sleep(0.01)
-        
+
         enable()
         play_ready = True
-        print("INFO: 机械臂已准备就绪，可以开始播放点位")
-        publish_status("success", "机械臂已准备就绪，可以开始播放点位", "replay_init")
+        print("INFO: Arm ready, can start waypoint playback")
+        publish_status("success", "Arm ready for waypoint playback", "replay_init")
         return True
 
-    print("INFO: 播放程序已启动，等待MQTT命令...")
-    print("INFO: 命令: replay_init / replay_enter / replay_q / setpos_<name>")
-    print("INFO: 位置集: default, welcome, right, left")
+    print("INFO: Playback program started, waiting MQTT commands...")
+    print("INFO: Commands: replay_init / replay_enter / replay_q / setpos_<name>")
+    print("INFO: Position sets: default, welcome, right, left")
     try:
-        while True:  # 主状态循环
+        while True:  # Main state loop
             reset_session_state()
 
-            print("INFO: 等待 replay_init 命令...")
+            print("INFO: Waiting for replay_init command...")
             while not init_flag:
                 time.sleep(MAIN_LOOP_SLEEP)
             
-            # 状态2: 执行初始化
+            # State 2: perform initialization
             if not init_play():
-                publish_status("error", "初始化失败，回到初始状态", "replay_init")
+                publish_status("error", "Initialization failed, returning to initial state", "replay_init")
                 continue
             
-            print("INFO: 等待 replay_enter 命令开始播放...")
+            print("INFO: Waiting for replay_enter command to start playback...")
             
-            # 状态3: 等待播放命令并执行播放
+            # State 3: wait for playback command then execute playback
             while play_ready and not exit_flag:
                 if not enter_flag:
                     time.sleep(MAIN_LOOP_SLEEP)
                     continue
 
-                enter_flag = False  # 消费一次播放请求
-                publish_status("success", f"开始播放，共{len(track)}个点位", "replay_enter")
+                enter_flag = False  # consume one playback request
+                publish_status("success", f"Start playback, total {len(track)} waypoints", "replay_enter")
                 play_completed = True
 
                 for idx, waypoint in enumerate(track):
@@ -263,7 +263,7 @@ if __name__ == "__main__":
                         play_completed = False
                         break
 
-                    # 发送指令并等待达成
+                    # Send motion commands and wait until reached
                     joints = [round(i / 0.0174533 * 1e3) for i in waypoint[:-1]]
                     start_t = time.time()
                     while True:
@@ -278,35 +278,35 @@ if __name__ == "__main__":
                         if reached:
                             break
                         if time.time() - start_t > WAYPOINT_TIMEOUT:
-                            publish_status("error", f"第{idx+1}个点位超时未到位", "waypoint_timeout")
+                            publish_status("error", f"Waypoint {idx+1} timeout not reached", "waypoint_timeout")
                             play_completed = False
                             break
 
                     if not play_completed:
                         break
 
-                    # 夹爪控制
+                    # Gripper control
                     if have_gripper and len(waypoint) == 7:
                         piper.GripperCtrl(round(waypoint[-1] * 1e6), 1000, 0x01, 0x00)
                         time.sleep(0.3)
 
-                    # 播放间隔
+                    # Playback interval
                     if play_interval > 0:
                         time.sleep(play_interval)
 
                 if play_completed:
-                    publish_status("success", f"播放完成，共{len(track)}个点位", "replay_complete")
+                    publish_status("success", f"Playback complete, total {len(track)} waypoints", "replay_complete")
                 else:
-                    publish_status("error", "播放未正常完成", "replay_incomplete")
-                break  # 无论成功与否退出本轮，等待下一次 init
+                    publish_status("error", "Playback did not complete normally", "replay_incomplete")
+                break  # exit this round regardless of success, wait next init
             
-            # 播放完成或被中断后，回到初始状态
-            print("INFO: 退出replay模式，回到初始状态")
-            publish_status("success", "结束本轮，回到初始等待", "replay_reset")
+            # After playback completed or interrupted, return to initial state
+            print("INFO: Exit replay mode, back to initial state")
+            publish_status("success", "End this round, back to initial waiting", "replay_reset")
             
     except KeyboardInterrupt:
-        print("INFO: 程序被用户中断")
+        print("INFO: Program interrupted by user")
     finally:
         mqtt_client.loop_stop()
         mqtt_client.disconnect()
-        print("INFO: 播放程序结束")
+        print("INFO: Playback program ended")
